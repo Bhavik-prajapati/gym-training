@@ -60,6 +60,9 @@ const workoutPlan = {
 // -------- GLOBAL STATE --------
 let showAll = false;
 let selectedDay = new Date().toLocaleString('en-US', { weekday: 'long' });
+const EXERCISE_DURATION_MS = 15 * 60 * 1000;
+const DEFAULT_PLANK_DURATION_MS = 60 * 1000;
+let exerciseIntervals = {};
 
 
 
@@ -121,6 +124,230 @@ function resetDay() {
   location.reload();
 }
 
+function formatExerciseTime(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function clearExerciseIntervals() {
+  Object.values(exerciseIntervals).forEach(interval => clearInterval(interval));
+  exerciseIntervals = {};
+}
+
+function getExerciseStartKey(key) {
+  return key + "-startedAt";
+}
+
+function getExerciseDurationKey(key) {
+  return key + "-duration";
+}
+
+function getExerciseTargetKey(key) {
+  return key + "-target";
+}
+
+function getExercisePausedAtKey(key) {
+  return key + "-pausedAt";
+}
+
+function getExercisePausedTotalKey(key) {
+  return key + "-pausedTotal";
+}
+
+function getExerciseElapsed(key) {
+  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  if (!startedAt) return 0;
+
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
+  const pausedTotal = parseInt(localStorage.getItem(getExercisePausedTotalKey(key)) || "0");
+  const endTime = pausedAt || Date.now();
+
+  return Math.max(0, endTime - startedAt - pausedTotal);
+}
+
+function isPlankExercise(exercise) {
+  return exercise.name.toLowerCase().includes("plank");
+}
+
+function getDefaultPlankDuration(exercise) {
+  const reps = exercise.reps.toLowerCase();
+  const minuteMatch = reps.match(/(\d+)\s*min/);
+  const secondMatch = reps.match(/(\d+)\s*sec/);
+
+  if (minuteMatch) return parseInt(minuteMatch[1]) * 60 * 1000;
+  if (secondMatch) return parseInt(secondMatch[1]) * 1000;
+
+  return DEFAULT_PLANK_DURATION_MS;
+}
+
+function getExerciseTargetDuration(key) {
+  return parseInt(localStorage.getItem(getExerciseTargetKey(key)) || EXERCISE_DURATION_MS);
+}
+
+function setPlankDuration(key, input) {
+  const seconds = parseInt(input.value || "0");
+  if (!seconds || seconds < 5) {
+    alert("Set at least 5 seconds for plank.");
+    return;
+  }
+
+  localStorage.setItem(getExerciseTargetKey(key), (seconds * 1000).toString());
+  render();
+}
+
+function startExercise(card, key) {
+  if (localStorage.getItem(key) === "done") return;
+
+  localStorage.setItem(getExerciseStartKey(key), Date.now().toString());
+  localStorage.setItem(getExercisePausedTotalKey(key), "0");
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExerciseDurationKey(key));
+  updateExerciseTimer(card, key);
+
+  clearInterval(exerciseIntervals[key]);
+  exerciseIntervals[key] = setInterval(() => {
+    updateExerciseTimer(card, key);
+  }, 1000);
+
+  render();
+}
+
+function pauseExercise(key) {
+  if (localStorage.getItem(key) === "done") return;
+  if (!localStorage.getItem(getExerciseStartKey(key))) return;
+  if (localStorage.getItem(getExercisePausedAtKey(key))) return;
+
+  localStorage.setItem(getExercisePausedAtKey(key), Date.now().toString());
+  render();
+}
+
+function resumeExercise(key) {
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
+  if (!pausedAt) return;
+
+  const pausedTotal = parseInt(localStorage.getItem(getExercisePausedTotalKey(key)) || "0");
+  localStorage.setItem(getExercisePausedTotalKey(key), (pausedTotal + Date.now() - pausedAt).toString());
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  render();
+}
+
+function completeExercise(card, key) {
+  const duration = getExerciseElapsed(key) || getExerciseTargetDuration(key);
+
+  clearInterval(exerciseIntervals[key]);
+  delete exerciseIntervals[key];
+
+  localStorage.setItem(key, "done");
+  localStorage.setItem(getExerciseDurationKey(key), duration.toString());
+  localStorage.removeItem(getExerciseStartKey(key));
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExercisePausedTotalKey(key));
+
+  card.classList.remove("active");
+  card.classList.remove("paused");
+  card.classList.add("done");
+  card.style.setProperty("--exercise-progress", "100%");
+
+  const timerText = card.querySelector(".exercise-time");
+  if (timerText) timerText.innerText = `Done in ${formatExerciseTime(duration)}`;
+
+  updateProgress();
+  updateSessionSummary();
+  render();
+}
+
+function resetExercise(key) {
+  clearInterval(exerciseIntervals[key]);
+  delete exerciseIntervals[key];
+
+  localStorage.removeItem(key);
+  localStorage.removeItem(getExerciseStartKey(key));
+  localStorage.removeItem(getExerciseDurationKey(key));
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExercisePausedTotalKey(key));
+
+  updateProgress();
+  updateSessionSummary();
+  render();
+}
+
+function updateExerciseTimer(card, key) {
+  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
+  const timerText = card.querySelector(".exercise-time");
+  const clockValue = card.querySelector(".plank-clock-value");
+  const targetDuration = getExerciseTargetDuration(key);
+
+  if (!startedAt || localStorage.getItem(key) === "done") {
+    if (timerText && localStorage.getItem(key) === "done") {
+      const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+      timerText.innerText = duration ? `Done in ${formatExerciseTime(duration)}` : "Completed";
+    }
+    if (clockValue && localStorage.getItem(key) === "done") {
+      clockValue.innerText = "Done";
+      card.style.setProperty("--plank-progress", "100%");
+    }
+    return;
+  }
+
+  const elapsed = getExerciseElapsed(key);
+  const percent = Math.min((elapsed / targetDuration) * 100, 100);
+  const remaining = targetDuration - elapsed;
+
+  card.classList.add("active");
+  card.style.setProperty("--exercise-progress", percent + "%");
+  card.style.setProperty("--plank-progress", percent + "%");
+
+  if (pausedAt) {
+    card.classList.add("paused");
+    if (timerText) {
+      timerText.innerText = `Paused at ${formatExerciseTime(elapsed)}`;
+    }
+    if (clockValue) {
+      clockValue.innerText = formatExerciseTime(remaining);
+    }
+    return;
+  }
+
+  card.classList.remove("paused");
+
+  if (timerText) {
+    timerText.innerText = `In progress: ${formatExerciseTime(remaining)} left`;
+  }
+
+  if (clockValue) {
+    clockValue.innerText = formatExerciseTime(remaining);
+  }
+
+  if (elapsed >= targetDuration) {
+    completeExercise(card, key);
+  }
+}
+
+function updateSessionSummary() {
+  const exercises = workoutPlan[selectedDay];
+  let totalDuration = 0;
+  let completed = 0;
+
+  exercises.forEach((_, index) => {
+    const key = `${selectedDay}-${index}`;
+    const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+    if (localStorage.getItem(key) === "done") {
+      completed++;
+      totalDuration += duration;
+    } else if (localStorage.getItem(getExerciseStartKey(key))) {
+      totalDuration += getExerciseElapsed(key);
+    }
+  });
+
+  const summary = document.getElementById("sessionSummary");
+  if (summary) {
+    summary.innerText = `Training time: ${formatExerciseTime(totalDuration)} | ${completed} done`;
+  }
+}
+
 // -------- WEIGHT TRACKING --------
 function setWeight(key) {
   const weight = prompt("Enter weight (kg):");
@@ -146,13 +373,14 @@ function toggleView() {
 
 // -------- PROGRESS --------
 function updateProgress() {
-  const exercises = workoutPlan[today];
+  const progressDay = selectedDay;
+  const exercises = workoutPlan[progressDay];
   const total = exercises.length;
 
   let done = 0;
 
   exercises.forEach((_, index) => {
-    if (localStorage.getItem(`${today}-${index}`) === "done") {
+    if (localStorage.getItem(`${progressDay}-${index}`) === "done") {
       done++;
     }
   });
@@ -163,7 +391,7 @@ function updateProgress() {
   document.getElementById("progressText").innerText = `${done}/${total} completed`;
 
   // reward + streak
-  if (done === total && total > 0) {
+  if (done === total && total > 0 && progressDay === today) {
     document.getElementById("progressText").innerText += " 🎉 Done!";
 
     const last = localStorage.getItem("lastCompletedDate");
@@ -185,38 +413,128 @@ function createCard(exercise, index, day) {
   card.classList.add("card");
 
   const key = `${day}-${index}`;
+  const isPlank = isPlankExercise(exercise);
+  if (isPlank && !localStorage.getItem(getExerciseTargetKey(key))) {
+    localStorage.setItem(getExerciseTargetKey(key), getDefaultPlankDuration(exercise).toString());
+  }
 
   const isDone = localStorage.getItem(key) === "done";
   if (isDone) card.classList.add("done");
+  const isActive = localStorage.getItem(getExerciseStartKey(key));
+  if (isActive && !isDone) card.classList.add("active");
+  const isPaused = localStorage.getItem(getExercisePausedAtKey(key));
+  if (isPaused && !isDone) card.classList.add("paused");
 
   const weight = localStorage.getItem(key + "-weight");
+  const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+  const controlLabel = isPaused ? "Resume" : "Pause";
+  const targetDuration = getExerciseTargetDuration(key);
+  const targetSeconds = Math.round(targetDuration / 1000);
 
   card.innerHTML = `
     <h3>${exercise.name}</h3>
     <p>${exercise.reps}</p>
+    ${isPlank ? `
+      <div class="plank-clock">
+        <div class="plank-clock-ring">
+          <span class="plank-clock-value">${isDone ? "Done" : formatExerciseTime(targetDuration)}</span>
+        </div>
+        <div class="plank-clock-setter">
+          <input class="plank-duration-input" type="number" min="5" step="5" value="${targetSeconds}" ${isActive || isDone ? "disabled" : ""}>
+          <button class="plank-set-btn" type="button" ${isActive || isDone ? "disabled" : ""}>Set sec</button>
+        </div>
+      </div>
+    ` : ""}
     <div class="weight">
       ${weight ? "🏋️ " + weight + " kg" : "➕ Add Weight"}
     </div>
+    <div class="exercise-time">${isDone ? duration ? "Done in " + formatExerciseTime(duration) : "Completed" : isActive ? "Starting..." : isPlank ? "Tap to start plank clock" : "Tap to start 15 min"}</div>
+    ${isActive && !isDone ? `
+      <div class="exercise-controls">
+        <button class="pause-btn" type="button">${controlLabel}</button>
+        <button class="finish-btn" type="button">Finish</button>
+      </div>
+    ` : ""}
+    ${isDone ? `
+      <div class="exercise-controls">
+        <button class="redo-btn" type="button">Redo</button>
+      </div>
+    ` : ""}
   `;
 
-  // tap = mark done
-  card.addEventListener("click", () => {
-    if (card.classList.contains("done")) {
-      card.classList.remove("done");
-      localStorage.removeItem(key);
-    } else {
-      card.classList.add("done");
-      localStorage.setItem(key, "done");
-    }
+  updateExerciseTimer(card, key);
+  if (isActive && !isDone) {
+    exerciseIntervals[key] = setInterval(() => {
+      updateExerciseTimer(card, key);
+      updateSessionSummary();
+    }, 1000);
+  }
 
-    updateProgress();
+  let clickTimeout;
+
+  // tap = start exercise timer
+  card.addEventListener("click", () => {
+    clearTimeout(clickTimeout);
+    clickTimeout = setTimeout(() => {
+      if (localStorage.getItem(getExerciseStartKey(key))) {
+        completeExercise(card, key);
+      } else {
+        startExercise(card, key);
+      }
+    }, 220);
   });
 
   // double tap = add weight
   card.addEventListener("dblclick", (e) => {
     e.stopPropagation();
+    clearTimeout(clickTimeout);
     setWeight(key);
   });
+
+  const plankInput = card.querySelector(".plank-duration-input");
+  const plankSetButton = card.querySelector(".plank-set-btn");
+  if (plankInput) {
+    plankInput.addEventListener("click", (e) => e.stopPropagation());
+    plankInput.addEventListener("dblclick", (e) => e.stopPropagation());
+  }
+  if (plankSetButton && plankInput) {
+    plankSetButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      setPlankDuration(key, plankInput);
+    });
+  }
+
+  const pauseButton = card.querySelector(".pause-btn");
+  if (pauseButton) {
+    pauseButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      if (localStorage.getItem(getExercisePausedAtKey(key))) {
+        resumeExercise(key);
+      } else {
+        pauseExercise(key);
+      }
+    });
+  }
+
+  const finishButton = card.querySelector(".finish-btn");
+  if (finishButton) {
+    finishButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      completeExercise(card, key);
+    });
+  }
+
+  const redoButton = card.querySelector(".redo-btn");
+  if (redoButton) {
+    redoButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      resetExercise(key);
+    });
+  }
 
   return card;
 }
@@ -226,6 +544,7 @@ function createCard(exercise, index, day) {
 
 
 function render() {
+  clearExerciseIntervals();
   container.innerHTML = "";
 
   if (showAll) {
@@ -261,6 +580,7 @@ function render() {
   updateProgress();
   updateWaterUI();
   updateStreak();
+  updateSessionSummary();
 }
 
 // -------- INITIAL LOAD --------

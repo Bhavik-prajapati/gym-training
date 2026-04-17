@@ -67,6 +67,24 @@ body {
   backdrop-filter: blur(10px);
   transition: 0.3s;
   cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  --exercise-progress: 0%;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--exercise-progress);
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.45), rgba(74, 222, 128, 0.75));
+  transition: width 1s linear;
+  z-index: 0;
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .card:hover {
@@ -82,11 +100,121 @@ body {
   margin-top: 5px;
 }
 
+.card.active {
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.45), 0 10px 30px rgba(34, 197, 94, 0.14);
+}
+
+.card.paused {
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.55), 0 10px 30px rgba(251, 191, 36, 0.12);
+}
+
+.card.active p,
+.card.active .weight {
+  color: #e2e8f0;
+}
+
+.exercise-time {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #86efac;
+  font-weight: 600;
+}
+
+.plank-clock {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.plank-clock-ring {
+  align-items: center;
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle at center, #111827 58%, transparent 59%),
+    conic-gradient(#fbbf24 var(--plank-progress, 0%), rgba(148, 163, 184, 0.25) 0);
+  border-radius: 50%;
+  display: grid;
+  flex: 0 0 74px;
+  place-items: center;
+}
+
+.plank-clock-value {
+  color: #fef3c7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.plank-clock-setter {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plank-clock-setter input {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: white;
+  min-width: 0;
+  padding: 8px;
+  width: 74px;
+}
+
+.plank-clock-setter button {
+  background: #fbbf24;
+  border: none;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px;
+}
+
+.plank-clock-setter input:disabled,
+.plank-clock-setter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.exercise-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.exercise-controls button {
+  border: none;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px;
+}
+
+.pause-btn {
+  background: #fbbf24;
+}
+
+.finish-btn {
+  background: #86efac;
+}
+
+.redo-btn {
+  background: #c4b5fd;
+}
+
 /* Done state */
 .done {
   background: linear-gradient(135deg, #16a34a, #22c55e);
   text-decoration: line-through;
   transform: scale(0.98);
+  --exercise-progress: 100%;
 }
 
 /* Mobile optimization */
@@ -122,6 +250,11 @@ body {
 
 #timer {
   color: #22c55e;
+  font-weight: bold;
+}
+
+#sessionSummary {
+  color: #86efac;
   font-weight: bold;
 }
 
