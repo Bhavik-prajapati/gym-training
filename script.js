@@ -143,21 +143,63 @@ function getExerciseDurationKey(key) {
   return key + "-duration";
 }
 
+function getExercisePausedAtKey(key) {
+  return key + "-pausedAt";
+}
+
+function getExercisePausedTotalKey(key) {
+  return key + "-pausedTotal";
+}
+
+function getExerciseElapsed(key) {
+  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  if (!startedAt) return 0;
+
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
+  const pausedTotal = parseInt(localStorage.getItem(getExercisePausedTotalKey(key)) || "0");
+  const endTime = pausedAt || Date.now();
+
+  return Math.max(0, endTime - startedAt - pausedTotal);
+}
+
 function startExercise(card, key) {
   if (localStorage.getItem(key) === "done") return;
 
   localStorage.setItem(getExerciseStartKey(key), Date.now().toString());
+  localStorage.setItem(getExercisePausedTotalKey(key), "0");
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExerciseDurationKey(key));
   updateExerciseTimer(card, key);
 
   clearInterval(exerciseIntervals[key]);
   exerciseIntervals[key] = setInterval(() => {
     updateExerciseTimer(card, key);
   }, 1000);
+
+  render();
+}
+
+function pauseExercise(key) {
+  if (localStorage.getItem(key) === "done") return;
+  if (!localStorage.getItem(getExerciseStartKey(key))) return;
+  if (localStorage.getItem(getExercisePausedAtKey(key))) return;
+
+  localStorage.setItem(getExercisePausedAtKey(key), Date.now().toString());
+  render();
+}
+
+function resumeExercise(key) {
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
+  if (!pausedAt) return;
+
+  const pausedTotal = parseInt(localStorage.getItem(getExercisePausedTotalKey(key)) || "0");
+  localStorage.setItem(getExercisePausedTotalKey(key), (pausedTotal + Date.now() - pausedAt).toString());
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  render();
 }
 
 function completeExercise(card, key) {
-  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
-  const duration = startedAt ? Date.now() - startedAt : EXERCISE_DURATION_MS;
+  const duration = getExerciseElapsed(key) || EXERCISE_DURATION_MS;
 
   clearInterval(exerciseIntervals[key]);
   delete exerciseIntervals[key];
@@ -165,8 +207,11 @@ function completeExercise(card, key) {
   localStorage.setItem(key, "done");
   localStorage.setItem(getExerciseDurationKey(key), duration.toString());
   localStorage.removeItem(getExerciseStartKey(key));
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExercisePausedTotalKey(key));
 
   card.classList.remove("active");
+  card.classList.remove("paused");
   card.classList.add("done");
   card.style.setProperty("--exercise-progress", "100%");
 
@@ -174,10 +219,13 @@ function completeExercise(card, key) {
   if (timerText) timerText.innerText = `Done in ${formatExerciseTime(duration)}`;
 
   updateProgress();
+  updateSessionSummary();
+  render();
 }
 
 function updateExerciseTimer(card, key) {
   const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
   const timerText = card.querySelector(".exercise-time");
 
   if (!startedAt || localStorage.getItem(key) === "done") {
@@ -188,12 +236,22 @@ function updateExerciseTimer(card, key) {
     return;
   }
 
-  const elapsed = Date.now() - startedAt;
+  const elapsed = getExerciseElapsed(key);
   const percent = Math.min((elapsed / EXERCISE_DURATION_MS) * 100, 100);
   const remaining = EXERCISE_DURATION_MS - elapsed;
 
   card.classList.add("active");
   card.style.setProperty("--exercise-progress", percent + "%");
+
+  if (pausedAt) {
+    card.classList.add("paused");
+    if (timerText) {
+      timerText.innerText = `Paused at ${formatExerciseTime(elapsed)}`;
+    }
+    return;
+  }
+
+  card.classList.remove("paused");
 
   if (timerText) {
     timerText.innerText = `In progress: ${formatExerciseTime(remaining)} left`;
@@ -201,6 +259,28 @@ function updateExerciseTimer(card, key) {
 
   if (elapsed >= EXERCISE_DURATION_MS) {
     completeExercise(card, key);
+  }
+}
+
+function updateSessionSummary() {
+  const exercises = workoutPlan[selectedDay];
+  let totalDuration = 0;
+  let completed = 0;
+
+  exercises.forEach((_, index) => {
+    const key = `${selectedDay}-${index}`;
+    const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+    if (localStorage.getItem(key) === "done") {
+      completed++;
+      totalDuration += duration;
+    } else if (localStorage.getItem(getExerciseStartKey(key))) {
+      totalDuration += getExerciseElapsed(key);
+    }
+  });
+
+  const summary = document.getElementById("sessionSummary");
+  if (summary) {
+    summary.innerText = `Training time: ${formatExerciseTime(totalDuration)} | ${completed} done`;
   }
 }
 
@@ -274,9 +354,12 @@ function createCard(exercise, index, day) {
   if (isDone) card.classList.add("done");
   const isActive = localStorage.getItem(getExerciseStartKey(key));
   if (isActive && !isDone) card.classList.add("active");
+  const isPaused = localStorage.getItem(getExercisePausedAtKey(key));
+  if (isPaused && !isDone) card.classList.add("paused");
 
   const weight = localStorage.getItem(key + "-weight");
   const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+  const controlLabel = isPaused ? "Resume" : "Pause";
 
   card.innerHTML = `
     <h3>${exercise.name}</h3>
@@ -285,12 +368,19 @@ function createCard(exercise, index, day) {
       ${weight ? "🏋️ " + weight + " kg" : "➕ Add Weight"}
     </div>
     <div class="exercise-time">${isDone ? duration ? "Done in " + formatExerciseTime(duration) : "Completed" : isActive ? "Starting..." : "Tap to start 15 min"}</div>
+    ${isActive && !isDone ? `
+      <div class="exercise-controls">
+        <button class="pause-btn" type="button">${controlLabel}</button>
+        <button class="finish-btn" type="button">Finish</button>
+      </div>
+    ` : ""}
   `;
 
   updateExerciseTimer(card, key);
   if (isActive && !isDone) {
     exerciseIntervals[key] = setInterval(() => {
       updateExerciseTimer(card, key);
+      updateSessionSummary();
     }, 1000);
   }
 
@@ -314,6 +404,28 @@ function createCard(exercise, index, day) {
     clearTimeout(clickTimeout);
     setWeight(key);
   });
+
+  const pauseButton = card.querySelector(".pause-btn");
+  if (pauseButton) {
+    pauseButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      if (localStorage.getItem(getExercisePausedAtKey(key))) {
+        resumeExercise(key);
+      } else {
+        pauseExercise(key);
+      }
+    });
+  }
+
+  const finishButton = card.querySelector(".finish-btn");
+  if (finishButton) {
+    finishButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      completeExercise(card, key);
+    });
+  }
 
   return card;
 }
@@ -359,6 +471,7 @@ function render() {
   updateProgress();
   updateWaterUI();
   updateStreak();
+  updateSessionSummary();
 }
 
 // -------- INITIAL LOAD --------
