@@ -60,6 +60,8 @@ const workoutPlan = {
 // -------- GLOBAL STATE --------
 let showAll = false;
 let selectedDay = new Date().toLocaleString('en-US', { weekday: 'long' });
+const EXERCISE_DURATION_MS = 15 * 60 * 1000;
+let exerciseIntervals = {};
 
 
 
@@ -121,6 +123,87 @@ function resetDay() {
   location.reload();
 }
 
+function formatExerciseTime(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function clearExerciseIntervals() {
+  Object.values(exerciseIntervals).forEach(interval => clearInterval(interval));
+  exerciseIntervals = {};
+}
+
+function getExerciseStartKey(key) {
+  return key + "-startedAt";
+}
+
+function getExerciseDurationKey(key) {
+  return key + "-duration";
+}
+
+function startExercise(card, key) {
+  if (localStorage.getItem(key) === "done") return;
+
+  localStorage.setItem(getExerciseStartKey(key), Date.now().toString());
+  updateExerciseTimer(card, key);
+
+  clearInterval(exerciseIntervals[key]);
+  exerciseIntervals[key] = setInterval(() => {
+    updateExerciseTimer(card, key);
+  }, 1000);
+}
+
+function completeExercise(card, key) {
+  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  const duration = startedAt ? Date.now() - startedAt : EXERCISE_DURATION_MS;
+
+  clearInterval(exerciseIntervals[key]);
+  delete exerciseIntervals[key];
+
+  localStorage.setItem(key, "done");
+  localStorage.setItem(getExerciseDurationKey(key), duration.toString());
+  localStorage.removeItem(getExerciseStartKey(key));
+
+  card.classList.remove("active");
+  card.classList.add("done");
+  card.style.setProperty("--exercise-progress", "100%");
+
+  const timerText = card.querySelector(".exercise-time");
+  if (timerText) timerText.innerText = `Done in ${formatExerciseTime(duration)}`;
+
+  updateProgress();
+}
+
+function updateExerciseTimer(card, key) {
+  const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
+  const timerText = card.querySelector(".exercise-time");
+
+  if (!startedAt || localStorage.getItem(key) === "done") {
+    if (timerText && localStorage.getItem(key) === "done") {
+      const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
+      timerText.innerText = duration ? `Done in ${formatExerciseTime(duration)}` : "Completed";
+    }
+    return;
+  }
+
+  const elapsed = Date.now() - startedAt;
+  const percent = Math.min((elapsed / EXERCISE_DURATION_MS) * 100, 100);
+  const remaining = EXERCISE_DURATION_MS - elapsed;
+
+  card.classList.add("active");
+  card.style.setProperty("--exercise-progress", percent + "%");
+
+  if (timerText) {
+    timerText.innerText = `In progress: ${formatExerciseTime(remaining)} left`;
+  }
+
+  if (elapsed >= EXERCISE_DURATION_MS) {
+    completeExercise(card, key);
+  }
+}
+
 // -------- WEIGHT TRACKING --------
 function setWeight(key) {
   const weight = prompt("Enter weight (kg):");
@@ -146,13 +229,14 @@ function toggleView() {
 
 // -------- PROGRESS --------
 function updateProgress() {
-  const exercises = workoutPlan[today];
+  const progressDay = selectedDay;
+  const exercises = workoutPlan[progressDay];
   const total = exercises.length;
 
   let done = 0;
 
   exercises.forEach((_, index) => {
-    if (localStorage.getItem(`${today}-${index}`) === "done") {
+    if (localStorage.getItem(`${progressDay}-${index}`) === "done") {
       done++;
     }
   });
@@ -163,7 +247,7 @@ function updateProgress() {
   document.getElementById("progressText").innerText = `${done}/${total} completed`;
 
   // reward + streak
-  if (done === total && total > 0) {
+  if (done === total && total > 0 && progressDay === today) {
     document.getElementById("progressText").innerText += " 🎉 Done!";
 
     const last = localStorage.getItem("lastCompletedDate");
@@ -188,8 +272,11 @@ function createCard(exercise, index, day) {
 
   const isDone = localStorage.getItem(key) === "done";
   if (isDone) card.classList.add("done");
+  const isActive = localStorage.getItem(getExerciseStartKey(key));
+  if (isActive && !isDone) card.classList.add("active");
 
   const weight = localStorage.getItem(key + "-weight");
+  const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
 
   card.innerHTML = `
     <h3>${exercise.name}</h3>
@@ -197,24 +284,34 @@ function createCard(exercise, index, day) {
     <div class="weight">
       ${weight ? "🏋️ " + weight + " kg" : "➕ Add Weight"}
     </div>
+    <div class="exercise-time">${isDone ? duration ? "Done in " + formatExerciseTime(duration) : "Completed" : isActive ? "Starting..." : "Tap to start 15 min"}</div>
   `;
 
-  // tap = mark done
-  card.addEventListener("click", () => {
-    if (card.classList.contains("done")) {
-      card.classList.remove("done");
-      localStorage.removeItem(key);
-    } else {
-      card.classList.add("done");
-      localStorage.setItem(key, "done");
-    }
+  updateExerciseTimer(card, key);
+  if (isActive && !isDone) {
+    exerciseIntervals[key] = setInterval(() => {
+      updateExerciseTimer(card, key);
+    }, 1000);
+  }
 
-    updateProgress();
+  let clickTimeout;
+
+  // tap = start exercise timer
+  card.addEventListener("click", () => {
+    clearTimeout(clickTimeout);
+    clickTimeout = setTimeout(() => {
+      if (localStorage.getItem(getExerciseStartKey(key))) {
+        completeExercise(card, key);
+      } else {
+        startExercise(card, key);
+      }
+    }, 220);
   });
 
   // double tap = add weight
   card.addEventListener("dblclick", (e) => {
     e.stopPropagation();
+    clearTimeout(clickTimeout);
     setWeight(key);
   });
 
@@ -226,6 +323,7 @@ function createCard(exercise, index, day) {
 
 
 function render() {
+  clearExerciseIntervals();
   container.innerHTML = "";
 
   if (showAll) {
