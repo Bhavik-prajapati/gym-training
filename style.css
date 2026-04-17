@@ -8,6 +8,14 @@ body {
   font-family: 'Segoe UI', sans-serif;
   background: linear-gradient(135deg, #0f172a, #1e293b);
   color: white;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  user-select: none;
+}
+
+input {
+  user-select: text;
 }
 
 /* App container */
@@ -67,6 +75,7 @@ body {
   backdrop-filter: blur(10px);
   transition: 0.3s;
   cursor: pointer;
+  touch-action: manipulation;
   overflow: hidden;
   position: relative;
   --exercise-progress: 0%;
@@ -240,6 +249,7 @@ body {
   background: #334155;
   color: white;
   font-size: 14px;
+  touch-action: manipulation;
 }
 
 .stats {
