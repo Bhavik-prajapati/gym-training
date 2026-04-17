@@ -120,6 +120,66 @@ body {
   font-weight: 600;
 }
 
+.plank-clock {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.plank-clock-ring {
+  align-items: center;
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle at center, #111827 58%, transparent 59%),
+    conic-gradient(#fbbf24 var(--plank-progress, 0%), rgba(148, 163, 184, 0.25) 0);
+  border-radius: 50%;
+  display: grid;
+  flex: 0 0 74px;
+  place-items: center;
+}
+
+.plank-clock-value {
+  color: #fef3c7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.plank-clock-setter {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plank-clock-setter input {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: white;
+  min-width: 0;
+  padding: 8px;
+  width: 74px;
+}
+
+.plank-clock-setter button {
+  background: #fbbf24;
+  border: none;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px;
+}
+
+.plank-clock-setter input:disabled,
+.plank-clock-setter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .exercise-controls {
   display: flex;
   gap: 8px;
@@ -143,6 +203,10 @@ body {
 
 .finish-btn {
   background: #86efac;
+}
+
+.redo-btn {
+  background: #c4b5fd;
 }
 
 /* Done state */

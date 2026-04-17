@@ -61,6 +61,7 @@ const workoutPlan = {
 let showAll = false;
 let selectedDay = new Date().toLocaleString('en-US', { weekday: 'long' });
 const EXERCISE_DURATION_MS = 15 * 60 * 1000;
+const DEFAULT_PLANK_DURATION_MS = 60 * 1000;
 let exerciseIntervals = {};
 
 
@@ -143,6 +144,10 @@ function getExerciseDurationKey(key) {
   return key + "-duration";
 }
 
+function getExerciseTargetKey(key) {
+  return key + "-target";
+}
+
 function getExercisePausedAtKey(key) {
   return key + "-pausedAt";
 }
@@ -160,6 +165,36 @@ function getExerciseElapsed(key) {
   const endTime = pausedAt || Date.now();
 
   return Math.max(0, endTime - startedAt - pausedTotal);
+}
+
+function isPlankExercise(exercise) {
+  return exercise.name.toLowerCase().includes("plank");
+}
+
+function getDefaultPlankDuration(exercise) {
+  const reps = exercise.reps.toLowerCase();
+  const minuteMatch = reps.match(/(\d+)\s*min/);
+  const secondMatch = reps.match(/(\d+)\s*sec/);
+
+  if (minuteMatch) return parseInt(minuteMatch[1]) * 60 * 1000;
+  if (secondMatch) return parseInt(secondMatch[1]) * 1000;
+
+  return DEFAULT_PLANK_DURATION_MS;
+}
+
+function getExerciseTargetDuration(key) {
+  return parseInt(localStorage.getItem(getExerciseTargetKey(key)) || EXERCISE_DURATION_MS);
+}
+
+function setPlankDuration(key, input) {
+  const seconds = parseInt(input.value || "0");
+  if (!seconds || seconds < 5) {
+    alert("Set at least 5 seconds for plank.");
+    return;
+  }
+
+  localStorage.setItem(getExerciseTargetKey(key), (seconds * 1000).toString());
+  render();
 }
 
 function startExercise(card, key) {
@@ -199,7 +234,7 @@ function resumeExercise(key) {
 }
 
 function completeExercise(card, key) {
-  const duration = getExerciseElapsed(key) || EXERCISE_DURATION_MS;
+  const duration = getExerciseElapsed(key) || getExerciseTargetDuration(key);
 
   clearInterval(exerciseIntervals[key]);
   delete exerciseIntervals[key];
@@ -223,30 +258,55 @@ function completeExercise(card, key) {
   render();
 }
 
+function resetExercise(key) {
+  clearInterval(exerciseIntervals[key]);
+  delete exerciseIntervals[key];
+
+  localStorage.removeItem(key);
+  localStorage.removeItem(getExerciseStartKey(key));
+  localStorage.removeItem(getExerciseDurationKey(key));
+  localStorage.removeItem(getExercisePausedAtKey(key));
+  localStorage.removeItem(getExercisePausedTotalKey(key));
+
+  updateProgress();
+  updateSessionSummary();
+  render();
+}
+
 function updateExerciseTimer(card, key) {
   const startedAt = parseInt(localStorage.getItem(getExerciseStartKey(key)) || "0");
   const pausedAt = parseInt(localStorage.getItem(getExercisePausedAtKey(key)) || "0");
   const timerText = card.querySelector(".exercise-time");
+  const clockValue = card.querySelector(".plank-clock-value");
+  const targetDuration = getExerciseTargetDuration(key);
 
   if (!startedAt || localStorage.getItem(key) === "done") {
     if (timerText && localStorage.getItem(key) === "done") {
       const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
       timerText.innerText = duration ? `Done in ${formatExerciseTime(duration)}` : "Completed";
     }
+    if (clockValue && localStorage.getItem(key) === "done") {
+      clockValue.innerText = "Done";
+      card.style.setProperty("--plank-progress", "100%");
+    }
     return;
   }
 
   const elapsed = getExerciseElapsed(key);
-  const percent = Math.min((elapsed / EXERCISE_DURATION_MS) * 100, 100);
-  const remaining = EXERCISE_DURATION_MS - elapsed;
+  const percent = Math.min((elapsed / targetDuration) * 100, 100);
+  const remaining = targetDuration - elapsed;
 
   card.classList.add("active");
   card.style.setProperty("--exercise-progress", percent + "%");
+  card.style.setProperty("--plank-progress", percent + "%");
 
   if (pausedAt) {
     card.classList.add("paused");
     if (timerText) {
       timerText.innerText = `Paused at ${formatExerciseTime(elapsed)}`;
+    }
+    if (clockValue) {
+      clockValue.innerText = formatExerciseTime(remaining);
     }
     return;
   }
@@ -257,7 +317,11 @@ function updateExerciseTimer(card, key) {
     timerText.innerText = `In progress: ${formatExerciseTime(remaining)} left`;
   }
 
-  if (elapsed >= EXERCISE_DURATION_MS) {
+  if (clockValue) {
+    clockValue.innerText = formatExerciseTime(remaining);
+  }
+
+  if (elapsed >= targetDuration) {
     completeExercise(card, key);
   }
 }
@@ -349,6 +413,10 @@ function createCard(exercise, index, day) {
   card.classList.add("card");
 
   const key = `${day}-${index}`;
+  const isPlank = isPlankExercise(exercise);
+  if (isPlank && !localStorage.getItem(getExerciseTargetKey(key))) {
+    localStorage.setItem(getExerciseTargetKey(key), getDefaultPlankDuration(exercise).toString());
+  }
 
   const isDone = localStorage.getItem(key) === "done";
   if (isDone) card.classList.add("done");
@@ -360,18 +428,36 @@ function createCard(exercise, index, day) {
   const weight = localStorage.getItem(key + "-weight");
   const duration = parseInt(localStorage.getItem(getExerciseDurationKey(key)) || "0");
   const controlLabel = isPaused ? "Resume" : "Pause";
+  const targetDuration = getExerciseTargetDuration(key);
+  const targetSeconds = Math.round(targetDuration / 1000);
 
   card.innerHTML = `
     <h3>${exercise.name}</h3>
     <p>${exercise.reps}</p>
+    ${isPlank ? `
+      <div class="plank-clock">
+        <div class="plank-clock-ring">
+          <span class="plank-clock-value">${isDone ? "Done" : formatExerciseTime(targetDuration)}</span>
+        </div>
+        <div class="plank-clock-setter">
+          <input class="plank-duration-input" type="number" min="5" step="5" value="${targetSeconds}" ${isActive || isDone ? "disabled" : ""}>
+          <button class="plank-set-btn" type="button" ${isActive || isDone ? "disabled" : ""}>Set sec</button>
+        </div>
+      </div>
+    ` : ""}
     <div class="weight">
       ${weight ? "🏋️ " + weight + " kg" : "➕ Add Weight"}
     </div>
-    <div class="exercise-time">${isDone ? duration ? "Done in " + formatExerciseTime(duration) : "Completed" : isActive ? "Starting..." : "Tap to start 15 min"}</div>
+    <div class="exercise-time">${isDone ? duration ? "Done in " + formatExerciseTime(duration) : "Completed" : isActive ? "Starting..." : isPlank ? "Tap to start plank clock" : "Tap to start 15 min"}</div>
     ${isActive && !isDone ? `
       <div class="exercise-controls">
         <button class="pause-btn" type="button">${controlLabel}</button>
         <button class="finish-btn" type="button">Finish</button>
+      </div>
+    ` : ""}
+    ${isDone ? `
+      <div class="exercise-controls">
+        <button class="redo-btn" type="button">Redo</button>
       </div>
     ` : ""}
   `;
@@ -405,6 +491,20 @@ function createCard(exercise, index, day) {
     setWeight(key);
   });
 
+  const plankInput = card.querySelector(".plank-duration-input");
+  const plankSetButton = card.querySelector(".plank-set-btn");
+  if (plankInput) {
+    plankInput.addEventListener("click", (e) => e.stopPropagation());
+    plankInput.addEventListener("dblclick", (e) => e.stopPropagation());
+  }
+  if (plankSetButton && plankInput) {
+    plankSetButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      setPlankDuration(key, plankInput);
+    });
+  }
+
   const pauseButton = card.querySelector(".pause-btn");
   if (pauseButton) {
     pauseButton.addEventListener("click", (e) => {
@@ -424,6 +524,15 @@ function createCard(exercise, index, day) {
       e.stopPropagation();
       clearTimeout(clickTimeout);
       completeExercise(card, key);
+    });
+  }
+
+  const redoButton = card.querySelector(".redo-btn");
+  if (redoButton) {
+    redoButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(clickTimeout);
+      resetExercise(key);
     });
   }
 
