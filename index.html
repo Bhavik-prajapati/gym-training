@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app">
+
+    <div class="header">
+        <button class="view-all-btn" onclick="toggleView()">📅</button>
+      <h1>💪 Workout</h1>
+      <p id="dayTitle"></p>
+
+      <div class="progress-box">
+        <div id="progressBar"></div>
+      </div>
+      <span id="progressText"></span>
+    </div>
+
+
+    <div class="top-actions">
+  <button onclick="startRestTimer()">⏱ Rest</button>
+  <button onclick="addWater()">💧 Water</button>
+  <button onclick="resetDay()">🔄 Reset</button>
+</div>
+
+<div class="stats">
+  <p id="streak">🔥 Streak: 0 days</p>
+  <p id="water">💧 Water: 0 glasses</p>
+  <p id="timer"></p>
+</div>
+
+    <div id="exerciseContainer"></div>
+
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
