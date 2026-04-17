@@ -73,6 +73,20 @@ const dateKey = new Date().toISOString().split('T')[0];
 const container = document.getElementById("exerciseContainer");
 document.getElementById("dayTitle").innerText = today;
 
+// Make the home-screen iPhone experience feel like an app, not a zoomable page.
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) {
+    e.preventDefault();
+  }
+  lastTouchEnd = now;
+}, { passive: false });
+
+document.addEventListener("dblclick", (e) => {
+  e.preventDefault();
+}, { passive: false });
+
 // -------- WATER TRACKER --------
 function addWater() {
   let water = parseInt(localStorage.getItem(dateKey + "-water") || "0");
