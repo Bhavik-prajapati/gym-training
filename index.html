@@ -2,42 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Workout Tracker</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <main class="app">
+    <header class="header">
+      <div class="title-row">
+        <div>
+          <p class="eyebrow">Daily plan</p>
+          <h1>Workout</h1>
+        </div>
+        <button class="icon-btn" id="toggleViewBtn" type="button" aria-label="Show weekly plan">Week</button>
+      </div>
 
-  <div class="app">
+      <p id="dayTitle" class="day-label"></p>
 
-    <div class="header">
-        <button class="view-all-btn" onclick="toggleView()">📅</button>
-      <h1>💪 Workout</h1>
-      <p id="dayTitle"></p>
-
-      <div class="progress-box">
+      <div class="progress-box" aria-label="Workout progress">
         <div id="progressBar"></div>
       </div>
       <span id="progressText"></span>
-    </div>
+    </header>
 
+    <section class="top-actions" aria-label="Quick actions">
+      <button id="restBtn" type="button">Rest 60s</button>
+      <button id="waterBtn" type="button">Add water</button>
+      <button id="resetBtn" type="button">Reset day</button>
+    </section>
 
-    <div class="top-actions">
-  <button onclick="startRestTimer()">⏱ Rest</button>
-  <button onclick="addWater()">💧 Water</button>
-  <button onclick="resetDay()">🔄 Reset</button>
-</div>
+    <section class="stats" aria-label="Workout stats">
+      <p id="streak">Streak: 0 days</p>
+      <p id="water">Water: 0 glasses</p>
+      <p id="sessionSummary">Training time: 0:00</p>
+      <p id="timer"></p>
+    </section>
 
-<div class="stats">
-  <p id="streak">🔥 Streak: 0 days</p>
-  <p id="water">💧 Water: 0 glasses</p>
-  <p id="sessionSummary">Training time: 0:00</p>
-  <p id="timer"></p>
-</div>
-
-    <div id="exerciseContainer"></div>
-
-  </div>
+    <section id="exerciseContainer" class="exercise-list" aria-label="Exercises"></section>
+  </main>
 
   <script src="script.js"></script>
 </body>
